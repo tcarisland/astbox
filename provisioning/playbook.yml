@@ -1,20 +1,155 @@
 ---
-- name: Set up non-root administrator user
-  hosts: all
-  become: yes #Run all tasks as root
+- name: Install and configure Asterisk from source with specific audio formats and MOH
+  hosts: vagrant_box
+  become: yes  # Run tasks as root (sudo)
+  vars:
+    asterisk_version: "20-current"  # Define the Asterisk version
+    asterisk_src_dir: "/usr/src/asterisk-{{ asterisk_version }}"  # Dynamic source directory
   tasks:
-    - name: Create the asteriskpbx user
-      user:
+    - name: Install Asterisk build dependencies
+      apt:
+        name:
+          - build-essential
+          - gcc
+          - g++
+          - make
+          - libedit-dev
+          - libjansson-dev
+          - libuuid1
+          - uuid-dev
+          - libxml2-dev
+          - libsqlite3-dev
+          - pkg-config
+          - curl
+          - libcurl4-openssl-dev
+          - ncurses-dev
+          - libnewt-dev
+        state: present
+        update_cache: yes
+      when: ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Create asteriskpbx group
+      group:
         name: asteriskpbx
-        shell: /bin/bash
-        groups: wheel
-        append: yes
         state: present
 
-    - name: Set up sudo privileges for asteriskpbx
+    - name: Create asteriskpbx user
+      user:
+        name: asteriskpbx
+        group: asteriskpbx
+        password: $6$rounds=656000$ppa1WO1eH3JSUucb$0mcfUz5kKXB3wCAqhVzowcyZOa3.r9rxmoOQAeHdY/PbAMlJNKckksRfyLwVxY.C0nD82Yjnaat/YwX71y/.X0
+        state: present
+
+    - name: Grant sudo privileges to asteriskpbx user
       lineinfile:
-        path: /etc/sudoers.d/asteriskpbx
-        line: "asteriskpbx ALL=(ALL) NOPASSWD:ALL"
-        create: yes
-        mode: '0440'
-        validate: 'visudo -cf %s'
+        path: /etc/sudoers
+        state: present
+        regexp: '^asteriskpbx'
+        line: 'asteriskpbx ALL=(ALL) NOPASSWD:ALL'
+        validate: '/usr/sbin/visudo -cf %s'
+
+    - name: Create Asterisk directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: asteriskpbx
+        group: asteriskpbx
+        mode: '0750'
+      loop:
+        - /etc/asterisk
+        - /var/lib/asterisk
+        - /var/log/asterisk
+        - /var/spool/asterisk
+        - /var/run/asterisk
+        - /usr/lib/asterisk
+        - /var/lib/asterisk/sounds
+        - /var/lib/asterisk/moh
+
+    - name: Download Asterisk source
+      get_url:
+        url: "http://downloads.asterisk.org/pub/telephony/asterisk/asterisk-{{ asterisk_version }}.tar.gz"
+        dest: "/usr/src/asterisk-{{ asterisk_version }}.tar.gz"
+        mode: '0644'
+
+    - name: Extract Asterisk source
+      unarchive:
+        src: "/usr/src/asterisk-{{ asterisk_version }}.tar.gz"
+        dest: /usr/src
+        remote_src: yes
+      register: asterisk_extract
+
+    - name: Find extracted Asterisk directory
+      find:
+        paths: /usr/src
+        file_type: directory
+        patterns: "asterisk-*"
+        recurse: no
+      register: asterisk_dir
+
+    - name: Set fact for Asterisk source directory
+      set_fact:
+        asterisk_src_dir: "{{ asterisk_dir.files[0].path }}"
+      when: asterisk_dir.files | length > 0
+
+    - name: Run Asterisk configure script
+      command: ./configure
+      args:
+        chdir: "{{ asterisk_src_dir }}"
+        creates: "{{ asterisk_src_dir }}/config.status"
+
+    - name: Compile Asterisk
+      command: make
+      args:
+        chdir: "{{ asterisk_src_dir }}"
+
+    - name: Compile Asterisk
+      command: make install
+      args:
+        chdir: "{{ asterisk_src_dir }}"
+
+    - name: Install Asterisk sample configurations
+      make:
+        chdir: "{{ asterisk_src_dir }}"
+        target: samples
+      register: samples_result
+      changed_when: samples_result.rc == 0
+
+    - name: Install Asterisk init scripts
+      make:
+        chdir: "{{ asterisk_src_dir }}"
+        target: config
+      register: config_result
+      changed_when: config_result.rc == 0
+
+    - name: Configure Asterisk to run as asteriskpbx user
+      lineinfile:
+        path: /etc/asterisk/asterisk.conf
+        regexp: '^{{ item.key }}'
+        line: '{{ item.key }} = {{ item.value }}'
+        insertafter: '^\[options\]'
+      loop:
+        - { key: 'runuser', value: 'asteriskpbx' }
+        - { key: 'rungroup', value: 'asteriskpbx' }
+
+    - name: Ensure Asterisk systemd service runs as asteriskpbx
+      lineinfile:
+        path: /lib/systemd/system/asterisk.service
+        regexp: '^{{ item.key }}='
+        line: '{{ item.key }}={{ item.value }}'
+      loop:
+        - { key: 'User', value: 'asteriskpbx' }
+        - { key: 'Group', value: 'asteriskpbx' }
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable Asterisk service
+      systemd:
+        name: asterisk
+        enabled: yes
+
+    - name: Start Asterisk service
+      systemd:
+        name: asterisk
+        state: started
