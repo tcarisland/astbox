@@ -1,0 +1,20 @@
+---
+- name: Set up non-root administrator user
+  hosts: all
+  become: yes #Run all tasks as root
+  tasks:
+    - name: Create the asteriskpbx user
+      user:
+        name: asteriskpbx
+        shell: /bin/bash
+        groups: wheel
+        append: yes
+        state: present
+
+    - name: Set up sudo privileges for asteriskpbx
+      lineinfile:
+        path: /etc/sudoers.d/asteriskpbx
+        line: "asteriskpbx ALL=(ALL) NOPASSWD:ALL"
+        create: yes
+        mode: '0440'
+        validate: 'visudo -cf %s'
