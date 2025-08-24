@@ -1,0 +1,188 @@
+---
+- name: Install and configure Asterisk from source with specific audio formats and MOH
+  hosts: vagrant_box
+  become: yes
+  vars:
+    asterisk_version: "20.15.1"  # Use the correct version
+    asterisk_src_dir: "/usr/src/asterisk-{{ asterisk_version }}"
+    sip_bind_port: 5060
+    sip_bind_addr: "0.0.0.0"
+    sip_extension: "1000"
+    sip_secret: "your_secure_password"
+    run_user: "asteriskpbx"
+    run_group: "asteriskpbx"
+    verbose_level: 3
+    debug_level: 0
+    webrtc_enabled: false
+    #nat_enabled: false
+    #external_ip: ""
+    #local_net: "192.168.0.0/16"
+    nat_enabled: true
+    external_ip: "192.168.33.10"  # VM’s private network IP
+    local_net: "192.168.33.0/24"  # Subnet for the private network
+
+  tasks:
+    - name: Install Asterisk build dependencies
+      apt:
+        name:
+          - build-essential
+          - gcc
+          - g++
+          - make
+          - libedit-dev
+          - libjansson-dev
+          - libuuid1
+          - uuid-dev
+          - libxml2-dev
+          - libsqlite3-dev
+          - pkg-config
+          - curl
+          - libcurl4-openssl-dev
+          - ncurses-dev
+          - libnewt-dev
+        state: present
+        update_cache: yes
+      when: ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu'
+
+
+    - name: Create asteriskpbx group
+      group:
+        name: asteriskpbx
+        state: present
+
+    - name: Create asteriskpbx user
+      user:
+        name: asteriskpbx
+        group: asteriskpbx
+        password: $6$rounds=656000$ppa1WO1eH3JSUucb$0mcfUz5kKXB3wCAqhVzowcyZOa3.r9rxmoOQAeHdY/PbAMlJNKckksRfyLwVxY.C0nD82Yjnaat/YwX71y/.X0
+        state: present
+
+    - name: Grant sudo privileges to asteriskpbx user
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: '^asteriskpbx'
+        line: 'asteriskpbx ALL=(ALL) NOPASSWD:ALL'
+        validate: '/usr/sbin/visudo -cf %s'
+
+    - name: Create Asterisk directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: asteriskpbx
+        group: asteriskpbx
+        mode: '0750'
+      loop:
+        - /etc/asterisk
+        - /var/lib/asterisk
+        - /var/log/asterisk
+        - /var/spool/asterisk
+        - /var/run/asterisk
+        - /usr/lib/asterisk
+        - /var/lib/asterisk/sounds
+        - /var/lib/asterisk/moh
+
+    - name: Download Asterisk source
+      get_url:
+        url: "http://downloads.asterisk.org/pub/telephony/asterisk/asterisk-{{ asterisk_version }}.tar.gz"
+        dest: "/usr/src/asterisk-{{ asterisk_version }}.tar.gz"
+        mode: '0644'
+
+    - name: Extract Asterisk source
+      unarchive:
+        src: "/usr/src/asterisk-{{ asterisk_version }}.tar.gz"
+        dest: /usr/src
+        remote_src: yes
+      register: asterisk_extract
+
+    - name: Delete asterisk tarball
+      ansible.builtin.file:
+        path: "/usr/src/asterisk-{{ asterisk_version }}.tar.gz"
+        state: absent
+
+    - name: Find extracted Asterisk directory
+      find:
+        paths: /usr/src
+        file_type: directory
+        patterns: "asterisk-*"
+        recurse: no
+      register: asterisk_dir
+
+    - name: Set fact for Asterisk source directory
+      set_fact:
+        asterisk_src_dir: "{{ asterisk_dir.files[0].path }}"
+      when: asterisk_dir.files | length > 0
+
+    - name: Template pjsip.conf to Asterisk
+      template:
+        src: templates/pjsip.conf.j2
+        dest: /etc/asterisk/pjsip.conf
+        owner: asteriskpbx
+        group: asteriskpbx
+        mode: '0640'
+
+    - name: Template modules.conf to Asterisk
+      template:
+        src: templates/modules.conf.j2
+        dest: /etc/asterisk/modules.conf
+        owner: asteriskpbx
+        group: asteriskpbx
+        mode: '0640'
+
+    - name: Template logger.conf to Asterisk
+      template:
+        src: templates/logger.conf.j2
+        dest: /etc/asterisk/logger.conf
+        owner: asteriskpbx
+        group: asteriskpbx
+        mode: '0640'
+
+    - name: Template voicemail.conf to Asterisk
+      template:
+        src: templates/voicemail.conf.j2
+        dest: /etc/asterisk/voicemail.conf
+        owner: asteriskpbx
+        group: asteriskpbx
+        mode: '0640'
+
+    - name: Template extensions.conf to Asterisk
+      template:
+        src: templates/extensions.conf.j2
+        dest: /etc/asterisk/extensions.conf
+        owner: asteriskpbx
+        group: asteriskpbx
+        mode: '0640'
+
+    - name: Template asterisk.conf to Asterisk
+      template:
+        src: templates/asterisk.conf.j2
+        dest: /etc/asterisk/asterisk.conf
+        owner: asteriskpbx
+        group: asteriskpbx
+        mode: '0640'
+
+    #- name: Configure Asterisk source with PJSIP and SRTP
+    #  command: ./configure --with-pjproject=/usr/local/pjproject --with-srtp
+    #  args:
+    #    chdir: "{{ asterisk_src_dir }}"
+    #    creates: "{{ asterisk_src_dir }}/Makefile"
+    #  become: yes
+
+    #- name: Build Asterisk
+    #  command: make
+    #  args:
+    #    chdir: "{{ asterisk_src_dir }}"
+    #  become: yes
+
+    #- name: Build Asterisk
+    #  command: make install
+    #  args:
+    #    chdir: "{{ asterisk_src_dir }}"
+    #  become: yes
+
+    #- name: Enable and start Asterisk service
+    #  systemd:
+    #    name: asterisk
+    #    enabled: yes
+    #    state: started
+    #  become: yes

@@ -1,0 +1,20 @@
+[directories]
+astetcdir => /etc/asterisk
+astmoddir => /usr/lib/asterisk/modules
+astvarlibdir => /var/lib/asterisk
+astlogdir => /var/log/asterisk
+astspooldir => /var/spool/asterisk
+astrundir => /var/run/asterisk
+astsoundsdir => /var/lib/asterisk/sounds
+astmohdir => /var/lib/asterisk/moh
+
+[options]
+runuser = {{ run_user | default('asteriskpbx') }}
+rungroup = {{ run_group | default('asteriskpbx') }}
+verbose = {{ verbose_level | default(3) }}
+debug = {{ debug_level | default(0) }}
+highpriority = yes
+{% if nat_enabled | default(false) %}
+externalip = {{ external_ip | default('') }}
+localnet = {{ local_net | default('192.168.0.0/16') }}
+{% endif %}

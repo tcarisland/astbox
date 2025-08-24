@@ -1,0 +1,37 @@
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+external_media_address={{ external_ip | default('192.168.33.10') }}
+external_signaling_address={{ external_ip | default('192.168.33.10') }}
+local_net={{ local_net | default('192.168.33.0/24') }}
+
+[transport-tcp]
+type=transport
+protocol=tcp
+bind=0.0.0.0:5060
+external_media_address={{ external_ip | default('192.168.33.10') }}
+external_signaling_address={{ external_ip | default('192.168.33.10') }}
+local_net={{ local_net | default('192.168.33.0/24') }}
+
+[1001]
+type=endpoint
+context=internal
+disallow=all
+allow=opus,ulaw,alaw
+auth=1001
+aors=1001
+media_encryption=sdes
+media_encryption_optimistic=yes
+dtmf_mode=rfc4733
+use_avpf=no
+
+[1001]
+type=aor
+max_contacts=1
+
+[1001]
+type=auth
+auth_type=userpass
+username=1001
+password={{ sip_secret | default('your_secure_password') }}
