@@ -1,7 +1,13 @@
 [internal]
 exten => 1001,1,Dial(PJSIP/1001,20)  ; Rings the SIP device registered as 1001
 exten => 1001,n,Voicemail(1001@default)
+exten => 1001,n,Hangup()
 
 exten => *43,1,Answer()              ; Echo test extension
 exten => *43,n,Echo()
 exten => *43,n,Hangup()
+
+exten => 2000,1,Answer()             ; MOH test extension
+exten => 2000,n,Set(CHANNEL(musicclass)=default)
+exten => 2000,n,MusicOnHold()
+exten => 2000,n,Hangup()

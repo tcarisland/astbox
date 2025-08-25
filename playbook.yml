@@ -7,8 +7,8 @@
     asterisk_src_dir: "/usr/src/asterisk-{{ asterisk_version }}"
     sip_bind_port: 5060
     sip_bind_addr: "0.0.0.0"
-    sip_extension: "1000"
-    sip_secret: "your_secure_password"
+    sip_extension: "1001"
+    sip_secret: "mysecret123"
     run_user: "asteriskpbx"
     run_group: "asteriskpbx"
     verbose_level: 3
@@ -121,6 +121,14 @@
         group: asteriskpbx
         mode: '0640'
 
+    - name: Template musiconhold.conf to Asterisk
+      template:
+        src: templates/musiconhold.conf.j2
+        dest: /etc/asterisk/musiconhold.conf
+        owner: asteriskpbx
+        group: asteriskpbx
+        mode: '0640'
+
     - name: Template modules.conf to Asterisk
       template:
         src: templates/modules.conf.j2
@@ -160,6 +168,39 @@
         owner: asteriskpbx
         group: asteriskpbx
         mode: '0640'
+
+    - name: Ensure UFW is installed
+      apt:
+        name: ufw
+        state: present
+        update_cache: yes
+      when: ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Allow UDP traffic on port 5060
+      ufw:
+        rule: allow
+        port: 5060
+        proto: udp
+
+    - name: Allow UDP traffic on port range 10000-20000
+      ufw:
+        rule: allow
+        port: "10000:20000"
+        proto: udp
+
+    - name: Enable UFW (optional, set to yes if you want it enabled)
+      ufw:
+        state: enabled
+      when: false  # Set to true to enable UFW, false to leave it disabled
+
+    - name: Debug - Check UFW status
+      command: ufw status
+      register: ufw_status
+      changed_when: false
+
+    - name: Display UFW status
+      debug:
+        msg: "{{ ufw_status.stdout_lines }}"
 
     #- name: Configure Asterisk source with PJSIP and SRTP
     #  command: ./configure --with-pjproject=/usr/local/pjproject --with-srtp
